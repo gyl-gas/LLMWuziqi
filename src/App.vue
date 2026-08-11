@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import GameBoard from './components/GameBoard.vue'
 import ModelConfig from './components/ModelConfig.vue'
 import HelpModal from './components/HelpModal.vue'
@@ -249,6 +249,55 @@ const boardDisabled = computed(() => {
 // ---- 复盘 ----
 const replaySeq = ref<number | null>(null)
 
+/** 自动播放棋谱：按间隔逐手前进，到底自动停止 */
+const replayAuto = ref(false)
+const replayIntervalSec = ref(2)
+let replayTimer: ReturnType<typeof setInterval> | null = null
+
+function startReplayAuto() {
+  if (replaySeq.value === null) return
+  if (replaySeq.value >= state.moveCount) return
+  replayAuto.value = true
+  if (replayTimer !== null) clearInterval(replayTimer)
+  replayTimer = setInterval(() => {
+    if (replaySeq.value === null) {
+      stopReplayAuto()
+      return
+    }
+    if (replaySeq.value >= state.moveCount) {
+      stopReplayAuto()
+      return
+    }
+    replaySeq.value += 1
+  }, replayIntervalSec.value * 1000)
+}
+
+function stopReplayAuto() {
+  replayAuto.value = false
+  if (replayTimer !== null) {
+    clearInterval(replayTimer)
+    replayTimer = null
+  }
+}
+
+function toggleReplayAuto() {
+  if (replayAuto.value) {
+    stopReplayAuto()
+  } else {
+    startReplayAuto()
+  }
+}
+
+watch(replayIntervalSec, () => {
+  // 播放中修改间隔：立即按新间隔重启
+  if (replayAuto.value) {
+    stopReplayAuto()
+    startReplayAuto()
+  }
+})
+
+onBeforeUnmount(() => stopReplayAuto())
+
 const replayView = computed(() => {
   if (replaySeq.value === null) return null
   const view = replayViewAt(state.boardSize, state.moves, replaySeq.value)
@@ -260,6 +309,7 @@ const replayView = computed(() => {
 })
 
 function onSelectMove(seq: number) {
+  stopReplayAuto()
   if (replaySeq.value === seq && seq === state.moveCount) {
     replaySeq.value = null
   } else {
@@ -268,11 +318,13 @@ function onSelectMove(seq: number) {
 }
 
 function replayStep(dir: 1 | -1) {
+  stopReplayAuto()
   if (replaySeq.value === null) return
   replaySeq.value = Math.min(state.moveCount, Math.max(0, replaySeq.value + dir))
 }
 
 function exitReplay() {
+  stopReplayAuto()
   replaySeq.value = null
 }
 </script>
@@ -329,6 +381,14 @@ function exitReplay() {
       <span class="replay-info">复盘 · {{ replayLabel }} / 共 {{ state.moveCount }} 手</span>
       <button :disabled="replaySeq === 0" @click="replayStep(-1)">上一步</button>
       <button :disabled="replaySeq >= state.moveCount" @click="replayStep(1)">下一步</button>
+      <button :disabled="replaySeq >= state.moveCount" @click="toggleReplayAuto">
+        {{ replayAuto ? '暂停播放' : '自动播放' }}
+      </button>
+      <label class="replay-interval">
+        间隔
+        <input v-model.number="replayIntervalSec" class="replay-interval-input" type="number" min="0.5" step="0.5" />
+        秒
+      </label>
       <button @click="exitReplay">退出复盘</button>
     </div>
 

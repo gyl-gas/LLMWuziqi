@@ -241,7 +241,7 @@ describe('useGameController / 人机回合', () => {
 })
 
 describe('useGameController / AI 对弈', () => {
-  const { gameNotice, resumeGame } = useGameController()
+  const { gameNotice, resumeGame, pauseGame } = useGameController()
 
   beforeEach(() => {
     config.game.mode = 'ai-ai'
@@ -344,6 +344,27 @@ describe('useGameController / AI 对弈', () => {
     await vi.waitFor(() => expect(state.moveCount).toBe(3))
     expect(state.board[7][8]).toBe(WHITE)
     expect(state.board[7][9]).toBe(BLACK)
+  })
+
+  it('暂停时 AI 正在重试：停止后续请求，不落子不判负', async () => {
+    const fetchMock = vi.fn()
+    // 黑方第一次返回非法落子（触发重试），延迟确保暂停能插在重试发起前
+    fetchMock.mockResolvedValueOnce(deferredMove('{"color":1,"x":99,"y":0}', 200))
+    vi.stubGlobal('fetch', fetchMock)
+    config.game.aiBlack = { providerId: 'mock', model: 'm' }
+    config.game.aiWhite = { providerId: 'mock', model: 'm' }
+
+    newGame(15)
+    // 等第一手请求在途后暂停
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    pauseGame()
+    // 等第一手返回（非法落子）：不应重试、不应判负
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    expect(state.moveCount).toBe(0)
+    expect(state.winner).toBeNull()
+    expect(phase.value).toBe('paused')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
 

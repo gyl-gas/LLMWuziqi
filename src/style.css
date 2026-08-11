@@ -214,6 +214,23 @@ button.primary:hover {
   cursor: not-allowed;
 }
 
+.replay-interval {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  color: #2d4a78;
+}
+
+.replay-interval-input {
+  width: 56px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid #b3c6e0;
+  font-size: 12px;
+  background: #fff;
+}
+
 .retry-box {
   display: flex;
   flex-wrap: wrap;

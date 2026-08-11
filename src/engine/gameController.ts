@@ -215,8 +215,18 @@ async function attemptLoop(target: AiTarget, messages: ChatMessage[], startAttem
   for (;;) {
     // 分出胜负后停止一切模型调用（防御：新开对局时也会因代次变化而退出）
     if (state.winner !== null || state.isDraw) return
+    // 暂停：不再发起下一次落子；在途请求的结果在下方统一处理
+    if (paused.value) return
     const result = await attemptOnce(target, msgs)
     if (version !== gameVersion) return // 对局已重置，丢弃本次 AI 回合结果
+    if (paused.value) {
+      // 暂停发生在请求在途期间：合法落子放行最后一手，失败则直接停止（不重试、不判负）
+      if (result.status === 'ok') {
+        applyAiMove(result, target, failCount)
+        afterMove()
+      }
+      return
+    }
 
     if (result.status === 'ok') {
       applyAiMove(result, target, failCount)
