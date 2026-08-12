@@ -22,10 +22,16 @@ export interface GameConfig {
   aiWhite: AiSide | null
 }
 
+export type ThinkingLevel = 'none' | 'low' | 'high' | 'max'
+
 /** AI 侧模型引用：providerId + 模型名 */
 export interface AiSide {
   providerId: string
   model: string
+  /** 仅 AI 对弈使用；未设置时回退到全局默认值 */
+  thinkingLevel?: ThinkingLevel
+  /** 仅 AI 对弈使用；未设置时回退到全局默认值 */
+  temperature?: number
 }
 
 export interface AiBehaviorConfig {
@@ -34,13 +40,11 @@ export interface AiBehaviorConfig {
   timeoutMs: number
   maxAutoRetries: number
   extraPrompt: string
-  useJsonMode: boolean
-  /** 推理模型是否允许思考过程；false 时向 DeepSeek 等发送 thinking.disabled，避免思考耗尽 max_tokens */
-  enableThinking: boolean
+  /** 推理模型的默认思考强度 */
+  thinkingLevel: ThinkingLevel
 }
 
 export interface AppConfig {
-  version?: number
   providers: ProviderConfig[]
   active: { providerId: string; model: string } | null
   game: GameConfig
@@ -48,9 +52,6 @@ export interface AppConfig {
 }
 
 const STORAGE_KEY = 'gomoku.config'
-
-/** 配置结构版本，用于旧配置迁移 */
-const CONFIG_VERSION = 5
 
 /** 从本地 .env.local 读取的默认 apiKey（demo 便捷注入） */
 const defaultApiKey = (import.meta.env.VITE_DEEPSEEK_API_KEY as string | undefined) ?? ''
@@ -90,7 +91,6 @@ export function applySharedPreset(): void {
 }
 function defaults(): AppConfig {
   return {
-    version: CONFIG_VERSION,
     providers: [
       {
         id: 'deepseek-default',
@@ -119,8 +119,7 @@ function defaults(): AppConfig {
       timeoutMs: 3000000,
       maxAutoRetries: 2,
       extraPrompt: '',
-      useJsonMode: true,
-      enableThinking: true,
+      thinkingLevel: 'high',
     },
   }
 }
@@ -167,7 +166,6 @@ function load(): AppConfig {
       return base
     }
     const parsed = JSON.parse(raw) as Partial<AppConfig>
-    const storedVersion = (parsed as { version?: number }).version ?? 1
     const providers = Array.isArray(parsed.providers)
       ? parsed.providers.map((p) => ({ ...p, apiKey: p.apiKey || defaultApiKey }))
       : base.providers
@@ -179,29 +177,6 @@ function load(): AppConfig {
       game: { ...base.game, ...parsed.game },
       ai: { ...base.ai, ...parsed.ai },
     }
-    // 迁移到当前版本：旧默认值升级为新默认（v2 默认 maxTokens 30000 / 超时 300s）
-    if (storedVersion < CONFIG_VERSION) {
-      if ((parsed.ai?.maxTokens ?? 1024) <= 30000) {
-        cfg.ai.maxTokens = base.ai.maxTokens
-      }
-      if ((parsed.ai?.timeoutMs ?? 60000) <= 300000) {
-        cfg.ai.timeoutMs = base.ai.timeoutMs
-      }
-      if (parsed.ai?.enableThinking === false) {
-        cfg.ai.enableThinking = base.ai.enableThinking
-      }
-      if (parsed.ai?.useJsonMode === false) {
-        cfg.ai.useJsonMode = base.ai.useJsonMode
-      }
-      if (parsed.game?.boardSize === 15) {
-        cfg.game.boardSize = base.game.boardSize
-      }
-      // v5：默认自动重试次数由 1 调整为 2（仅迁移旧默认值）
-      if ((parsed.ai?.maxAutoRetries ?? 1) === 1) {
-        cfg.ai.maxAutoRetries = base.ai.maxAutoRetries
-      }
-    }
-    cfg.version = CONFIG_VERSION
     autoActivate(cfg)
     fillAiSides(cfg)
     return cfg

@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { BLACK } from '../core/board'
-import type { MoveEntry } from '../core/notation'
+import type { AiFailureEntry, MoveEntry } from '../core/notation'
 import AnalysisPanel from './AnalysisPanel.vue'
 
 const props = defineProps<{
   moves: MoveEntry[]
+  failures: AiFailureEntry[]
   activeSeq?: number | null
 }>()
 
 const emit = defineEmits<{ select: [seq: number] }>()
 
 const list = computed(() => props.moves.slice().reverse())
+const failureList = computed(() => props.failures.slice().reverse())
 
 function colorLabel(color: number): string {
   return color === BLACK ? '黑' : '白'
@@ -29,7 +31,12 @@ function durationText(m: MoveEntry): string {
   return m.durationMs !== undefined ? `${(m.durationMs / 1000).toFixed(1)}s` : ''
 }
 
+function failureDurationText(failure: AiFailureEntry): string {
+  return `${(failure.durationMs / 1000).toFixed(1)}s`
+}
+
 const expanded = ref<number | null>(null)
+const expandedFailure = ref<number | null>(null)
 const showAnalysis = ref(false)
 
 const hasAiMoves = computed(() => props.moves.some((m) => m.source === 'ai'))
@@ -40,6 +47,10 @@ function toggle(m: MoveEntry) {
 
 function hasDetail(m: MoveEntry): boolean {
   return m.source === 'ai' && (m.reasoning !== undefined || m.raw !== undefined)
+}
+
+function toggleFailure(failure: AiFailureEntry) {
+  expandedFailure.value = expandedFailure.value === failure.seq ? null : failure.seq
 }
 
 </script>
@@ -82,6 +93,38 @@ function hasDetail(m: MoveEntry): boolean {
         </li>
       </template>
     </ol>
+
+    <div v-if="failureList.length > 0" class="failure-section">
+      <h3>AI 请求失败（{{ failureList.length }}）</h3>
+      <ol class="list failure-list">
+        <template v-for="failure in failureList" :key="failure.seq">
+          <li class="row failure-row" :class="{ expanded: expandedFailure === failure.seq }">
+            <span class="seq">#{{ failure.seq }}</span>
+            <span class="stone" :class="failure.color === BLACK ? 'black' : 'white'">{{ colorLabel(failure.color) }}</span>
+            <span class="failure-status">{{ failure.status }}</span>
+            <span class="src">AI · {{ failure.model }}</span>
+            <span class="duration">{{ failureDurationText(failure) }}</span>
+            <button class="failure-detail-btn" @click="toggleFailure(failure)">
+              {{ expandedFailure === failure.seq ? '收起详情' : '查看详情' }}
+            </button>
+          </li>
+          <li v-if="expandedFailure === failure.seq" class="detail">
+            <div class="detail-block">
+              <div class="detail-label">失败原因</div>
+              <pre class="detail-body">{{ failure.message }}</pre>
+            </div>
+            <div v-if="failure.reasoning" class="detail-block">
+              <div class="detail-label">AI 思考</div>
+              <pre class="detail-body">{{ failure.reasoning }}</pre>
+            </div>
+            <div v-if="failure.raw" class="detail-block">
+              <div class="detail-label">原始返回</div>
+              <pre class="detail-body">{{ failure.raw }}</pre>
+            </div>
+          </li>
+        </template>
+      </ol>
+    </div>
 
     <AnalysisPanel v-if="showAnalysis" :moves="moves" @close="showAnalysis = false" />
   </div>
@@ -258,5 +301,42 @@ function hasDetail(m: MoveEntry): boolean {
   color: #4a3a22;
   font-family: Consolas, monospace;
   font-size: 12px;
+}
+
+.failure-section {
+  margin-top: 16px;
+  border-top: 1px solid #eadbc5;
+  padding-top: 12px;
+}
+
+.failure-section h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #8c3d2f;
+}
+
+.failure-list {
+  max-height: 220px;
+}
+
+.failure-row {
+  cursor: default;
+  background: #fff4f1;
+}
+
+.failure-row:hover {
+  background: #fff4f1;
+}
+
+.failure-status {
+  width: 58px;
+  color: #a33b2b;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.failure-detail-btn {
+  font-size: 11px;
+  padding: 3px 8px;
 }
 </style>

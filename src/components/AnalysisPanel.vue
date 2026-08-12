@@ -324,8 +324,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .analysis-modal {
-  width: min(860px, 100%);
-  max-height: 92vh;
+  width: min(1240px, 100%);
+  max-height: 96vh;
   overflow-y: auto;
   background: #fffaf0;
   border: 1px solid #d8c3a0;
@@ -386,6 +386,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 .chart {
   width: 100%;
+  aspect-ratio: 16 / 8;
   height: auto;
   background: #fffdf8;
   border: 1px solid #e8dcc2;
@@ -509,5 +510,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   color: #4a2f14;
   font-weight: 600;
   font-family: Consolas, monospace;
+}
+
+@media (max-width: 760px) {
+  .analysis-overlay {
+    padding: 8px;
+  }
+
+  .chart-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

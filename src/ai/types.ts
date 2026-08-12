@@ -29,7 +29,10 @@ export interface AiTurnFail {
   status: Exclude<AiTurnStatus, 'ok'>
   message: string
   raw?: string
+  reasoning?: string
+  finishReason?: string
   durationMs: number
+  usage?: TokenUsage
 }
 
 export type AiTurnResult = AiTurnOk | AiTurnFail

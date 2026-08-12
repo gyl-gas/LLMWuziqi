@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import { BLACK, WHITE, createBoard, isValidMove, placeStone } from '../core/board'
 import type { Stone } from '../core/board'
 import { checkWinAt, isBoardFull } from '../core/rules'
-import type { MoveEntry } from '../core/notation'
+import type { AiFailureEntry, MoveEntry } from '../core/notation'
 
 export interface GameState {
   boardSize: number
@@ -13,6 +13,7 @@ export interface GameState {
   winLine: Array<[number, number]> | null
   moveCount: number
   moves: MoveEntry[]
+  aiFailures: AiFailureEntry[]
   lastMove: MoveEntry | null
 }
 
@@ -26,6 +27,7 @@ function initialState(): GameState {
     winLine: null,
     moveCount: 0,
     moves: [],
+    aiFailures: [],
     lastMove: null,
   }
 }
@@ -41,6 +43,7 @@ export interface GameSnapshot {
   winLine: Array<[number, number]> | null
   moveCount: number
   moves: MoveEntry[]
+  aiFailures?: AiFailureEntry[]
   lastMove: MoveEntry | null
   savedAt: number
 }
@@ -60,6 +63,7 @@ function saveSnapshot(): void {
     winLine: state.winLine,
     moveCount: state.moveCount,
     moves: state.moves.map((m) => ({ ...m })),
+    aiFailures: state.aiFailures.map((failure) => ({ ...failure })),
     lastMove: state.lastMove !== null ? { ...state.lastMove } : null,
     savedAt: Date.now(),
   }
@@ -99,6 +103,7 @@ function applySnapshot(snap: GameSnapshot): boolean {
   state.winLine = snap.winLine
   state.moveCount = snap.moves.length
   state.moves = snap.moves.map((m) => ({ ...m }))
+  state.aiFailures = (snap.aiFailures ?? []).map((failure) => ({ ...failure }))
   state.lastMove = snap.lastMove !== null ? { ...snap.lastMove } : null
   return true
 }
@@ -168,6 +173,18 @@ export function useGame() {
     return true
   }
 
+  /** 记录一次 AI 请求失败；失败记录不参与棋盘、复盘或有效落子计数。 */
+  function recordAiFailure(
+    failure: Omit<AiFailureEntry, 'seq' | 'moveCount'>,
+  ): void {
+    state.aiFailures.push({
+      ...failure,
+      seq: state.aiFailures.length + 1,
+      moveCount: state.moveCount,
+    })
+    saveSnapshot()
+  }
+
   /** 判负：color 一方认负/失败（AI 对弈中某方重试耗尽或无模型时），对方获胜 */
   function forfeit(color: Stone): void {
     if (state.winner !== null || state.isDraw) return
@@ -177,5 +194,5 @@ export function useGame() {
     saveSnapshot()
   }
 
-  return { state, start, play, forfeit, restoreSnapshot, importSnapshot, clearSnapshot }
+  return { state, start, play, recordAiFailure, forfeit, restoreSnapshot, importSnapshot, clearSnapshot }
 }

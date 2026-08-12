@@ -67,7 +67,7 @@ describe('chatCompletion', () => {
     expect(url).toBe('/deepseek/chat/completions')
   })
 
-  it('enableThinking=false 时发送 thinking.disabled', async () => {
+  it('thinkingLevel=none 时发送 thinking.disabled', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({
@@ -75,13 +75,14 @@ describe('chatCompletion', () => {
         json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
       })),
     )
-    await chatCompletion(provider, 'm', [], { ...options, enableThinking: false })
+    await chatCompletion(provider, 'm', [], { ...options, thinkingLevel: 'none' })
     const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.thinking).toEqual({ type: 'disabled' })
+    expect(body.reasoning_effort).toBeUndefined()
   })
 
-  it('未设置 enableThinking 时不发送 thinking 字段', async () => {
+  it('思考强度开启时发送 thinking.enabled、reasoning_effort 与默认 JSON 输出', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({
@@ -89,10 +90,12 @@ describe('chatCompletion', () => {
         json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
       })),
     )
-    await chatCompletion(provider, 'm', [], options)
+    await chatCompletion(provider, 'm', [], { ...options, thinkingLevel: 'high' })
     const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.thinking).toBeUndefined()
+    expect(body.thinking).toEqual({ type: 'enabled' })
+    expect(body.reasoning_effort).toBe('high')
+    expect(body.response_format).toEqual({ type: 'json_object' })
   })
 
   it('透传 usage token 用量', async () => {

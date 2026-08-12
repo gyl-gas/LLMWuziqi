@@ -1,7 +1,7 @@
 import { ref, watch } from 'vue'
 import { useGame } from '../store/game'
 import { useConfig } from '../store/config'
-import type { ProviderConfig } from '../store/config'
+import type { ProviderConfig, ThinkingLevel } from '../store/config'
 import { BLACK } from '../core/board'
 import type { Stone } from '../core/board'
 import { AiRequestError, chatCompletion } from '../ai/client'
@@ -23,6 +23,8 @@ export interface RetryInfo {
 interface AiTarget {
   provider: ProviderConfig
   model: string
+  thinkingLevel: ThinkingLevel
+  temperature: number
 }
 
 interface AiContext {
@@ -31,7 +33,7 @@ interface AiContext {
   attempt: number
 }
 
-const { state, start, play, forfeit, restoreSnapshot, importSnapshot } = useGame()
+const { state, start, play, recordAiFailure, forfeit, restoreSnapshot, importSnapshot } = useGame()
 const { config } = useConfig()
 
 const phase = ref<GamePhase>('humanTurn')
@@ -69,12 +71,17 @@ function stopAiTimer(owner?: number) {
 }
 
 /** 解析 providerId + model 为可用 AI 目标；不可用返回 null */
-function resolveTarget(providerId: string | undefined, model: string | undefined): AiTarget | null {
+function resolveTarget(
+  providerId: string | undefined,
+  model: string | undefined,
+  thinkingLevel = config.ai.thinkingLevel,
+  temperature = config.ai.temperature,
+): AiTarget | null {
   if (providerId === undefined || model === undefined) return null
   const provider = config.providers.find((p) => p.id === providerId)
   if (provider === undefined || !provider.enabled) return null
   if (!provider.models.includes(model)) return null
-  return { provider, model }
+  return { provider, model, thinkingLevel, temperature }
 }
 
 /** 根据当前回合选择 AI 目标：ai-ai 按执色取双方模型，human-ai 用全局 active 模型 */
@@ -82,7 +89,12 @@ function targetForCurrentPlayer(): AiTarget | null {
   if (config.game.mode === 'ai-ai') {
     const side = state.currentPlayer === BLACK ? config.game.aiBlack : config.game.aiWhite
     if (side === null) return null
-    return resolveTarget(side.providerId, side.model)
+    return resolveTarget(
+      side.providerId,
+      side.model,
+      side.thinkingLevel ?? config.ai.thinkingLevel,
+      side.temperature ?? config.ai.temperature,
+    )
   }
   return resolveTarget(config.active?.providerId, config.active?.model)
 }
@@ -113,20 +125,35 @@ function buildInitialMessages(): ChatMessage[] {
 async function attemptOnce(target: AiTarget, messages: ChatMessage[]): Promise<AiTurnResult> {
   try {
     const chat = await chatCompletion(target.provider, target.model, messages, {
-      temperature: config.ai.temperature,
+      temperature: target.temperature,
       maxTokens: config.ai.maxTokens,
       timeoutMs: config.ai.timeoutMs,
-      useJsonMode: config.ai.useJsonMode,
-      enableThinking: config.ai.enableThinking,
+      thinkingLevel: target.thinkingLevel,
     })
     if (chat.content.trim() === '') {
       const hint =
         '模型返回内容为空。若是推理模型，通常是因为思考过程耗尽了 max_tokens 预算：请在「模型配置 → AI 参数」中关闭「允许思考」，或增大 max_tokens。'
-      return { status: 'parse', message: hint, raw: chat.content, durationMs: chat.durationMs }
+      return {
+        status: 'parse',
+        message: hint,
+        raw: chat.content,
+        reasoning: chat.reasoning,
+        finishReason: chat.finishReason,
+        durationMs: chat.durationMs,
+        usage: chat.usage,
+      }
     }
     const parsed = parseAiMove(chat.content, state.boardSize, state.currentPlayer, state.board)
     if (!parsed.ok) {
-      return { status: 'invalid', message: parsed.reason, raw: chat.content, durationMs: chat.durationMs }
+      return {
+        status: 'invalid',
+        message: parsed.reason,
+        raw: chat.content,
+        reasoning: chat.reasoning,
+        finishReason: chat.finishReason,
+        durationMs: chat.durationMs,
+        usage: chat.usage,
+      }
     }
     return {
       status: 'ok',
@@ -138,7 +165,7 @@ async function attemptOnce(target: AiTarget, messages: ChatMessage[]): Promise<A
     }
   } catch (err) {
     if (err instanceof AiRequestError) {
-      return { status: err.kind, message: err.message, durationMs: 0 }
+      return { status: err.kind, message: err.message, raw: err.raw, durationMs: 0 }
     }
     return { status: 'network', message: `未知错误：${(err as Error).message}`, durationMs: 0 }
   }
@@ -174,6 +201,22 @@ function applyAiMove(result: AiTurnResult & { status: 'ok' }, target: AiTarget, 
     phase.value = 'aiRetry'
     return
   }
+}
+
+function recordFailedAttempt(result: Exclude<AiTurnResult, { status: 'ok' }>, target: AiTarget) {
+  recordAiFailure({
+    color: state.currentPlayer,
+    model: target.model,
+    status: result.status,
+    message: result.message,
+    raw: result.raw,
+    reasoning: result.reasoning,
+    finishReason: result.finishReason,
+    durationMs: result.durationMs,
+    promptTokens: result.usage?.promptTokens,
+    completionTokens: result.usage?.completionTokens,
+    totalTokens: result.usage?.totalTokens,
+  })
 }
 
 /** AI 对弈中某方判负：对方获胜并结束对局 */
@@ -219,6 +262,7 @@ async function attemptLoop(target: AiTarget, messages: ChatMessage[], startAttem
     if (paused.value) return
     const result = await attemptOnce(target, msgs)
     if (version !== gameVersion) return // 对局已重置，丢弃本次 AI 回合结果
+    if (result.status !== 'ok') recordFailedAttempt(result, target)
     if (paused.value) {
       // 暂停发生在请求在途期间：合法落子放行最后一手，失败则直接停止（不重试、不判负）
       if (result.status === 'ok') {
@@ -241,14 +285,10 @@ async function attemptLoop(target: AiTarget, messages: ChatMessage[], startAttem
     }
 
     if (attempt >= stopAt) {
-      if (config.game.mode === 'ai-ai') {
-        // AI 对弈无人值守：重试耗尽直接判该方负，避免对局卡死
-        forfeitAiSide(state.currentPlayer, `连续重试 ${failCount} 次仍失败（${result.message}）`)
-        return
-      }
       aiError.value = { kind: result.status, message: result.message, raw: result.raw, attempt }
       lastContext = { target, messages: msgs, attempt }
-      phase.value = paused.value ? 'paused' : 'aiRetry'
+      paused.value = true
+      phase.value = 'paused'
       return
     }
     attempt += 1
@@ -317,6 +357,8 @@ function resumeGame() {
     return
   }
   paused.value = false
+  lastContext = null
+  aiError.value = null
   if (needsAi) {
     void runAiTurn()
   } else {

@@ -1,5 +1,6 @@
 import { SUPPORTED_SIZES } from '../core/board'
 import type { AiSide, GameConfig } from './config'
+import type { AiFailureEntry } from '../core/notation'
 import type { GameSnapshot } from './game'
 
 export const EXPORT_FORMAT = 'gomoku-export'
@@ -41,6 +42,7 @@ export function buildExport(snapshot: GameSnapshot, game: GameConfig): ExportedG
       winLine: snapshot.winLine,
       moveCount: snapshot.moveCount,
       moves: snapshot.moves.map((m) => ({ ...m })),
+      aiFailures: snapshot.aiFailures?.map((failure) => ({ ...failure })),
       lastMove: snapshot.lastMove !== null ? { ...snapshot.lastMove } : null,
       savedAt: snapshot.savedAt,
     },
@@ -52,7 +54,30 @@ export type ParseExportResult = { ok: true; data: ExportedGame } | { ok: false; 
 function isAiSide(v: unknown): v is AiSide {
   if (typeof v !== 'object' || v === null) return false
   const o = v as Record<string, unknown>
-  return typeof o.providerId === 'string' && typeof o.model === 'string'
+  return (
+    typeof o.providerId === 'string' &&
+    typeof o.model === 'string' &&
+    (o.thinkingLevel === undefined ||
+      o.thinkingLevel === 'none' ||
+      o.thinkingLevel === 'low' ||
+      o.thinkingLevel === 'high' ||
+      o.thinkingLevel === 'max') &&
+    (o.temperature === undefined || (typeof o.temperature === 'number' && Number.isFinite(o.temperature)))
+  )
+}
+
+function isAiFailure(v: unknown): v is AiFailureEntry {
+  if (typeof v !== 'object' || v === null) return false
+  const o = v as Record<string, unknown>
+  return (
+    typeof o.seq === 'number' &&
+    typeof o.moveCount === 'number' &&
+    (o.color === 1 || o.color === 2) &&
+    typeof o.model === 'string' &&
+    (o.status === 'timeout' || o.status === 'network' || o.status === 'parse' || o.status === 'invalid' || o.status === 'http') &&
+    typeof o.message === 'string' &&
+    typeof o.durationMs === 'number'
+  )
 }
 
 /** 解析并校验导入的对局文件文本 */
@@ -100,6 +125,7 @@ export function parseExport(text: string): ParseExportResult {
     winLine: s.winLine === null ? null : (s.winLine as GameSnapshot['winLine']),
     moveCount: s.moveCount as number,
     moves: s.moves as GameSnapshot['moves'],
+    aiFailures: Array.isArray(s.aiFailures) ? s.aiFailures.filter(isAiFailure) : [],
     lastMove: s.lastMove === null || s.lastMove === undefined ? null : (s.lastMove as GameSnapshot['lastMove']),
     savedAt: typeof s.savedAt === 'number' ? s.savedAt : Date.now(),
   }

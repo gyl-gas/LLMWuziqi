@@ -105,8 +105,7 @@ function resetAiParams() {
   config.ai.maxTokens = 300000
   config.ai.timeoutMs = 3000000
   config.ai.maxAutoRetries = 2
-  config.ai.enableThinking = true
-  config.ai.useJsonMode = true
+  config.ai.thinkingLevel = 'high'
   config.ai.extraPrompt = ''
 }
 
@@ -127,6 +126,7 @@ async function testProvider(provider: ProviderConfig) {
       temperature: 0.7,
       maxTokens: 32,
       timeoutMs: 30000,
+      thinkingLevel: config.ai.thinkingLevel,
     })
     results.value[provider.id] = {
       ok: true,
@@ -206,7 +206,7 @@ async function testProvider(provider: ProviderConfig) {
       </div>
     </div>
 
-    <div class="provider-card">
+    <div v-if="false" class="provider-card">
       <div class="config-head">
         <h2>AI 行为参数（全局）</h2>
       </div>
@@ -230,11 +230,14 @@ async function testProvider(provider: ProviderConfig) {
         </label>
       </div>
       <div class="provider-row">
-        <label class="check">
-          <input v-model="config.ai.enableThinking" type="checkbox" /> 允许思考（推理模型）
-        </label>
-        <label class="check">
-          <input v-model="config.ai.useJsonMode" type="checkbox" /> JSON 模式（response_format）
+        <label>
+          默认思考强度
+          <select v-model="config.ai.thinkingLevel" class="input">
+            <option value="none">none（关闭思考）</option>
+            <option value="low">low</option>
+            <option value="high">high</option>
+            <option value="max">max</option>
+          </select>
         </label>
       </div>
       <div class="provider-row">

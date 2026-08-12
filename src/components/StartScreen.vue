@@ -2,17 +2,32 @@
 import { computed, ref, watch } from 'vue'
 import { BLACK, SUPPORTED_SIZES, WHITE } from '../core/board'
 import { firstAvailableAiSide, isValidAiSide, useConfig } from '../store/config'
-import type { AiSide } from '../store/config'
+import type { AiSide, ThinkingLevel } from '../store/config'
 import type { ExportedGame } from '../store/export'
 
 /** resume 传入时表示「继续导入的对局」：模式/棋盘/执子锁定，仅可配置模型 */
-const props = withDefaults(defineProps<{ open: boolean; resume?: ExportedGame | null }>(), {
+const props = withDefaults(defineProps<{ open: boolean; resume?: ExportedGame | null; editing?: boolean }>(), {
   resume: null,
+  editing: false,
 })
-const emit = defineEmits<{ start: []; close: []; resume: [] }>()
+const emit = defineEmits<{ start: []; close: []; resume: []; save: [] }>()
 
 const { config } = useConfig()
 const errorMsg = ref('')
+const timeoutSeconds = ref(Math.round(config.ai.timeoutMs / 1000))
+
+watch(
+  () => config.ai.timeoutMs,
+  (value) => {
+    timeoutSeconds.value = Math.round(value / 1000)
+  },
+)
+
+function onTimeoutChange() {
+  const seconds = Math.max(10, Math.round(timeoutSeconds.value))
+  timeoutSeconds.value = seconds
+  config.ai.timeoutMs = seconds * 1000
+}
 
 const MODES = [
   { value: 'pvp', label: '双人对战', desc: '两位玩家在本机轮流落子' },
@@ -23,11 +38,12 @@ const MODES = [
 type ModeValue = (typeof MODES)[number]['value']
 
 const isResume = computed(() => props.resume !== null && props.resume !== undefined)
+const isEditing = computed(() => props.editing && !isResume.value)
 
 const mode = computed({
   get: () => (isResume.value ? (props.resume!.mode as ModeValue) : (config.game.mode as ModeValue)),
   set: (v: ModeValue) => {
-    if (isResume.value) return
+    if (isResume.value || isEditing.value) return
     config.game.mode = v
     errorMsg.value = ''
     if (v === 'ai-ai') ensureAiSides()
@@ -60,6 +76,17 @@ function sideFromKey(key: string): AiSide | null {
   return { providerId: key.slice(0, idx), model: key.slice(idx + 2) }
 }
 
+function sideWithModel(key: string, previous: AiSide | null): AiSide | null {
+  const next = sideFromKey(key)
+  return next === null
+    ? null
+    : {
+        ...next,
+        thinkingLevel: previous?.thinkingLevel ?? config.ai.thinkingLevel,
+        temperature: previous?.temperature ?? config.ai.temperature,
+      }
+}
+
 function ensureAiSides() {
   if (!isValidAiSide(config, config.game.aiBlack)) config.game.aiBlack = firstAvailableAiSide(config)
   if (!isValidAiSide(config, config.game.aiWhite)) config.game.aiWhite = firstAvailableAiSide(config)
@@ -75,14 +102,14 @@ const activeKey = computed({
 const blackKey = computed({
   get: () => keyOf(config.game.aiBlack),
   set: (key: string) => {
-    config.game.aiBlack = sideFromKey(key)
+    config.game.aiBlack = sideWithModel(key, config.game.aiBlack)
   },
 })
 
 const whiteKey = computed({
   get: () => keyOf(config.game.aiWhite),
   set: (key: string) => {
-    config.game.aiWhite = sideFromKey(key)
+    config.game.aiWhite = sideWithModel(key, config.game.aiWhite)
   },
 })
 
@@ -92,11 +119,38 @@ function swapSides() {
   config.game.aiWhite = black
 }
 
+function thinkingLevelOf(side: AiSide | null): ThinkingLevel {
+  return side?.thinkingLevel ?? config.ai.thinkingLevel
+}
+
+function setThinkingLevel(color: 'black' | 'white', thinkingLevel: ThinkingLevel) {
+  const side = color === 'black' ? config.game.aiBlack : config.game.aiWhite
+  if (side === null) return
+  const next = { ...side, thinkingLevel }
+  if (color === 'black') config.game.aiBlack = next
+  else config.game.aiWhite = next
+}
+
+function temperatureOf(side: AiSide | null): number {
+  return side?.temperature ?? config.ai.temperature
+}
+
+function setTemperature(color: 'black' | 'white', value: number) {
+  const side = color === 'black' ? config.game.aiBlack : config.game.aiWhite
+  if (side === null) return
+  const temperature = Math.max(0, Math.min(2, Number.isFinite(value) ? value : config.ai.temperature))
+  const next = { ...side, temperature }
+  if (color === 'black') config.game.aiBlack = next
+  else config.game.aiWhite = next
+}
+
 function onSizeChange(e: Event) {
+  if (isEditing.value) return
   config.game.boardSize = Number((e.target as HTMLSelectElement).value)
 }
 
 function onHumanColorChange(e: Event) {
+  if (isEditing.value) return
   config.game.humanColor = Number((e.target as HTMLSelectElement).value) as 1 | 2
 }
 
@@ -128,6 +182,8 @@ function start() {
   }
   if (isResume.value) {
     emit('resume')
+  } else if (isEditing.value) {
+    emit('save')
   } else {
     emit('start')
   }
@@ -139,7 +195,7 @@ function start() {
     <div v-if="open" class="start-mask" @click.self="emit('close')">
       <div class="start-modal">
         <div class="start-head">
-          <h2>{{ isResume ? '继续导入的对局' : '开始新对局' }}</h2>
+          <h2>{{ isResume ? '继续导入的对局' : isEditing ? '对局设置' : '开始新对局' }}</h2>
           <button class="close-btn" title="关闭" @click="emit('close')">×</button>
         </div>
 
@@ -150,7 +206,7 @@ function start() {
               :key="m.value"
               class="mode-card"
               :class="{ active: mode === m.value }"
-              :disabled="isResume"
+              :disabled="isResume || isEditing"
               @click="mode = m.value"
             >
               <span class="mode-label">{{ m.label }}</span>
@@ -161,7 +217,7 @@ function start() {
           <div class="row">
             <label>
               棋盘尺寸
-              <select :value="config.game.boardSize" :disabled="isResume" @change="onSizeChange">
+              <select :value="config.game.boardSize" :disabled="isResume || isEditing" @change="onSizeChange">
                 <option v-for="s in SUPPORTED_SIZES" :key="s" :value="s">{{ s }} × {{ s }}</option>
               </select>
             </label>
@@ -171,7 +227,7 @@ function start() {
             <div class="row">
               <label>
                 我方执子
-                <select :value="config.game.humanColor" :disabled="isResume" @change="onHumanColorChange">
+                <select :value="config.game.humanColor" :disabled="isResume || isEditing" @change="onHumanColorChange">
                   <option :value="BLACK">黑棋（先手）</option>
                   <option :value="WHITE">白棋（后手）</option>
                 </select>
@@ -184,27 +240,116 @@ function start() {
                 </select>
               </label>
             </div>
+            <div class="row">
+              <label>
+                思考强度
+                <select v-model="config.ai.thinkingLevel">
+                  <option value="none">none（关闭思考）</option>
+                  <option value="low">low</option>
+                  <option value="high">high</option>
+                  <option value="max">max</option>
+                </select>
+              </label>
+              <label>
+                温度
+                <input v-model.number="config.ai.temperature" type="number" min="0" max="2" step="0.1" />
+              </label>
+            </div>
           </template>
 
           <template v-else-if="mode === 'ai-ai'">
-            <div class="row">
-              <label>
-                黑方 AI（先手）
-                <select v-model="blackKey">
-                  <option v-for="o in modelOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
-                </select>
-              </label>
-              <label>
-                白方 AI（后手）
-                <select v-model="whiteKey">
-                  <option v-for="o in modelOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
-                </select>
-              </label>
-              <button class="small" @click="swapSides">交换双方</button>
+            <div class="ai-side-grid">
+              <section class="ai-side-panel black-side">
+                <h3>黑方 AI（先手）</h3>
+                <label>
+                  模型
+                  <select v-model="blackKey">
+                    <option v-for="o in modelOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
+                  </select>
+                </label>
+                <label>
+                  思考强度
+                  <select
+                    :value="thinkingLevelOf(config.game.aiBlack)"
+                    @change="setThinkingLevel('black', ($event.target as HTMLSelectElement).value as ThinkingLevel)"
+                  >
+                    <option value="none">none（关闭思考）</option>
+                    <option value="low">low</option>
+                    <option value="high">high</option>
+                    <option value="max">max</option>
+                  </select>
+                </label>
+                <label>
+                  温度
+                  <input
+                    :value="temperatureOf(config.game.aiBlack)"
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    @change="setTemperature('black', Number(($event.target as HTMLInputElement).value))"
+                  />
+                </label>
+              </section>
+              <section class="ai-side-panel white-side">
+                <h3>白方 AI（后手）</h3>
+                <label>
+                  模型
+                  <select v-model="whiteKey">
+                    <option v-for="o in modelOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
+                  </select>
+                </label>
+                <label>
+                  思考强度
+                  <select
+                    :value="thinkingLevelOf(config.game.aiWhite)"
+                    @change="setThinkingLevel('white', ($event.target as HTMLSelectElement).value as ThinkingLevel)"
+                  >
+                    <option value="none">none（关闭思考）</option>
+                    <option value="low">low</option>
+                    <option value="high">high</option>
+                    <option value="max">max</option>
+                  </select>
+                </label>
+                <label>
+                  温度
+                  <input
+                    :value="temperatureOf(config.game.aiWhite)"
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    @change="setTemperature('white', Number(($event.target as HTMLInputElement).value))"
+                  />
+                </label>
+              </section>
             </div>
+            <button class="small swap-sides" @click="swapSides">交换双方</button>
             <p class="hint">
-              黑方先手，双方自动轮流落子直到分出胜负；某方连续失败（默认重试 2 次）或无可用模型时判负并停止对局。
+              黑方先手，双方自动轮流落子直到分出胜负；连续失败达到重试上限后会自动暂停，等待手动继续。
             </p>
+          </template>
+
+          <template v-if="mode !== 'pvp'">
+            <div class="match-params">
+              <h3>AI 对局参数</h3>
+              <label>
+                max_tokens
+                <input v-model.number="config.ai.maxTokens" type="number" min="64" max="300000" step="64" />
+              </label>
+              <label>
+                超时（秒）
+                <input v-model.number="timeoutSeconds" type="number" min="10" max="10000" @change="onTimeoutChange" />
+              </label>
+              <label>
+                自动重试次数
+                <input v-model.number="config.ai.maxAutoRetries" type="number" min="0" max="10" step="1" />
+              </label>
+              <label class="extra-prompt">
+                附加提示词
+                <input v-model="config.ai.extraPrompt" type="text" />
+              </label>
+            </div>
           </template>
 
           <p v-if="mode === 'pvp'" class="hint">两位玩家在本机轮流落子，无 AI 参与。</p>
@@ -214,7 +359,7 @@ function start() {
 
         <div class="start-foot">
           <p v-if="isResume" class="hint resume-hint">已导入未结束的对局，确认模型配置后点击「继续对局」。</p>
-          <button class="primary" @click="start">{{ isResume ? '继续对局' : '开始对局' }}</button>
+          <button class="primary" @click="start">{{ isResume ? '继续对局' : isEditing ? '保存设置' : '开始对局' }}</button>
         </div>
       </div>
     </div>
@@ -324,6 +469,70 @@ function start() {
   gap: 8px;
   align-items: center;
   font-size: 14px;
+}
+
+.ai-side-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ai-side-panel,
+.match-params {
+  border: 1px solid #e2d3b8;
+  border-radius: 8px;
+  background: #fffdf6;
+  padding: 12px;
+}
+
+.ai-side-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-side-panel.black-side {
+  border-top: 3px solid #2f2f2f;
+}
+
+.ai-side-panel.white-side {
+  border-top: 3px solid #c3b79c;
+}
+
+.ai-side-panel h3,
+.match-params h3 {
+  margin: 0;
+  font-size: 13px;
+  color: #4a2f14;
+}
+
+.ai-side-panel label,
+.match-params label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: #6b5a41;
+}
+
+.swap-sides {
+  margin: 10px 0;
+}
+
+.match-params {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.match-params h3,
+.match-params .extra-prompt {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 620px) {
+  .ai-side-grid,
+  .match-params {
+    grid-template-columns: 1fr;
+  }
 }
 
 .hint {

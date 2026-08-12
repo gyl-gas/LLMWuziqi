@@ -10,9 +10,8 @@ export interface ChatOptions {
   temperature: number
   maxTokens: number
   timeoutMs: number
-  useJsonMode?: boolean
-  /** 推理模型是否允许思考；false 时发送 thinking.disabled（DeepSeek 等支持） */
-  enableThinking?: boolean
+  /** 推理强度；none 时关闭思考 */
+  thinkingLevel?: 'none' | 'low' | 'high' | 'max'
 }
 
 export interface ChatResult {
@@ -28,11 +27,13 @@ export type RequestFailKind = 'timeout' | 'network' | 'http'
 
 export class AiRequestError extends Error {
   readonly kind: RequestFailKind
+  readonly raw?: string
 
-  constructor(kind: RequestFailKind, message: string) {
+  constructor(kind: RequestFailKind, message: string, raw?: string) {
     super(message)
     this.name = 'AiRequestError'
     this.kind = kind
+    this.raw = raw
   }
 }
 
@@ -60,12 +61,12 @@ export async function chatCompletion(
       temperature: options.temperature,
       max_tokens: options.maxTokens,
     }
-    if (options.useJsonMode === true) {
-      body.response_format = { type: 'json_object' }
-    }
-    if (options.enableThinking === false) {
-      // DeepSeek 推理模型扩展：关闭思考，直接输出最终内容
+    body.response_format = { type: 'json_object' }
+    if (options.thinkingLevel === 'none') {
       body.thinking = { type: 'disabled' }
+    } else {
+      body.thinking = { type: 'enabled' }
+      body.reasoning_effort = options.thinkingLevel ?? 'high'
     }
 
     let response = await fetch(`${baseUrl}/chat/completions`, {
@@ -87,7 +88,7 @@ export async function chatCompletion(
 
     if (!response.ok) {
       const text = await response.text().catch(() => '')
-      throw new AiRequestError('http', `HTTP ${response.status}${text ? `：${text.slice(0, 300)}` : ''}`)
+      throw new AiRequestError('http', `HTTP ${response.status}${text ? `：${text.slice(0, 300)}` : ''}`, text)
     }
 
     const data = (await response.json()) as {

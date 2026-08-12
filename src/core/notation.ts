@@ -31,6 +31,25 @@ export interface MoveEntry {
   totalTokens?: number
 }
 
+/** AI 请求失败记录：仅用于审计，不属于有效落子。 */
+export interface AiFailureEntry {
+  /** 全局失败序号，从 1 开始递增。 */
+  seq: number
+  /** 截至本次失败时已有的有效落子数。 */
+  moveCount: number
+  color: Stone
+  model: string
+  status: 'timeout' | 'network' | 'parse' | 'invalid' | 'http'
+  message: string
+  raw?: string
+  reasoning?: string
+  finishReason?: string
+  durationMs: number
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+}
+
 /** 由手数推导颜色：奇数为黑(1)，偶数为白(2) */
 export function colorFromSeq(seq: number): Stone {
   return seq % 2 === 1 ? 1 : 2

@@ -32,6 +32,7 @@ const { config } = useConfig()
 const showModelConfig = ref(false)
 const showHelp = ref(false)
 const showStart = ref(false)
+const editStartSettings = ref(false)
 const HELP_SEEN_KEY = 'gomoku.helpSeen'
 const restored = ref(restoreGame())
 
@@ -85,12 +86,21 @@ function onSizeChange(e: Event) {
 /** 打开开始界面，配置模式/模型后开始新对局 */
 function openStartScreen() {
   resumeData.value = null
+  editStartSettings.value = false
+  showStart.value = true
+}
+
+function openMatchSettings() {
+  if (state.winner !== null || state.isDraw) return
+  resumeData.value = null
+  editStartSettings.value = true
   showStart.value = true
 }
 
 /** 开始界面确认：按当前配置开始新对局 */
 function onStartFromScreen() {
   showStart.value = false
+  editStartSettings.value = false
   resumeData.value = null
   restored.value = false
   newGame(config.game.boardSize)
@@ -115,6 +125,7 @@ function onExport() {
     winLine: state.winLine,
     moveCount: state.moveCount,
     moves: state.moves.map((m) => ({ ...m })),
+    aiFailures: state.aiFailures.map((failure) => ({ ...failure })),
     lastMove: state.lastMove !== null ? { ...state.lastMove } : null,
     savedAt: Date.now(),
   }
@@ -161,6 +172,7 @@ async function onImportFile(e: Event) {
 function onResumeFromImport() {
   const data = resumeData.value
   showStart.value = false
+  editStartSettings.value = false
   resumeData.value = null
   if (data === null) return
   resumeGame()
@@ -345,6 +357,7 @@ function exitReplay() {
         请求 AI
       </label>
       <button class="primary" @click="openStartScreen">开始新对局</button>
+      <button :disabled="state.winner !== null || state.isDraw" @click="openMatchSettings">对局设置</button>
       <button :disabled="state.winner !== null || state.isDraw" @click="onTogglePause">
         {{ isPaused ? '继续对局' : '暂停对局' }}
       </button>
@@ -426,13 +439,15 @@ function exitReplay() {
       @play="onHumanPlay"
     />
 
-    <MoveLog :moves="state.moves" :active-seq="replaySeq" @select="onSelectMove" />
+    <MoveLog :moves="state.moves" :failures="state.aiFailures" :active-seq="replaySeq" @select="onSelectMove" />
 
     <StartScreen
       :open="showStart"
       :resume="resumeData"
+      :editing="editStartSettings"
       @start="onStartFromScreen"
       @resume="onResumeFromImport"
+      @save="showStart = false"
       @close="showStart = false"
     />
 

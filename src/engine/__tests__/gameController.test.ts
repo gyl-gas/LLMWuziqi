@@ -7,7 +7,7 @@ import { useGameController } from '../gameController'
 const storage: Record<string, string> = {}
 
 const { config } = useConfig()
-const { state, phase, aiError, newGame, onHumanPlay, retryAi, restoreGame, resumeGame } = useGameController()
+const { state, phase, aiError, newGame, onHumanPlay, restoreGame, resumeGame } = useGameController()
 
 function mockFetch(content: string) {
   vi.stubGlobal(
@@ -93,13 +93,22 @@ describe('useGameController / 人机回合', () => {
 
     expect(state.board[7][8]).toBe(WHITE)
     expect(state.moves[1].retries).toBe(1)
+    expect(state.aiFailures).toHaveLength(1)
+    expect(state.aiFailures[0]).toMatchObject({
+      seq: 1,
+      moveCount: 1,
+      color: WHITE,
+      model: 'm',
+      status: 'invalid',
+      raw: '{"color":2,"x":99,"y":0}',
+    })
     expect(fetchMock).toHaveBeenCalledTimes(2)
     // 第二次请求包含修正提示
     const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body)
     expect(secondBody.messages.at(-1).content).toContain('不合法')
   })
 
-  it('自动重试耗尽后进入 aiRetry，手动重试成功后继续', async () => {
+  it('自动重试耗尽后自动暂停，手动继续后重新请求', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({
@@ -109,13 +118,13 @@ describe('useGameController / 人机回合', () => {
     )
     newGame(15)
     onHumanPlay(7, 7)
-    await vi.waitFor(() => expect(phase.value).toBe('aiRetry'))
+    await vi.waitFor(() => expect(phase.value).toBe('paused'))
     expect(state.moveCount).toBe(1)
 
-    // 手动重试（仍然失败）→ 再次进入 aiRetry
-    retryAi()
-    await vi.waitFor(() => expect(phase.value).toBe('aiRetry'))
+    resumeGame()
+    await vi.waitFor(() => expect(phase.value).toBe('paused'))
     expect(state.moveCount).toBe(1)
+    expect(state.aiFailures).toHaveLength(4)
   })
 
   it('AI 返回空内容时提示并转手动重试', async () => {
@@ -128,7 +137,7 @@ describe('useGameController / 人机回合', () => {
     )
     newGame(15)
     onHumanPlay(7, 7)
-    await vi.waitFor(() => expect(phase.value).toBe('aiRetry'))
+    await vi.waitFor(() => expect(phase.value).toBe('paused'))
     expect(state.moveCount).toBe(1)
     expect(aiError.value?.message).toContain('为空')
   })
@@ -290,7 +299,7 @@ describe('useGameController / AI 对弈', () => {
     expect(fetchMock).toHaveBeenCalledTimes(9)
   })
 
-  it('某方重试耗尽后判对方获胜并停止对局', async () => {
+  it('某方重试耗尽后自动暂停且不判负', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({
@@ -301,10 +310,12 @@ describe('useGameController / AI 对弈', () => {
     config.ai.maxAutoRetries = 2
 
     newGame(15)
-    await vi.waitFor(() => expect(phase.value).toBe('over'))
-    expect(state.winner).toBe(WHITE)
+    await vi.waitFor(() => expect(phase.value).toBe('paused'))
+    expect(state.winner).toBeNull()
     expect(state.moveCount).toBe(0)
-    expect(gameNotice.value).toContain('判白方获胜')
+    expect(state.aiFailures).toHaveLength(3)
+    expect(state.aiFailures.every((failure) => failure.status === 'invalid')).toBe(true)
+    expect(gameNotice.value).toBeNull()
   })
 
   it('某方未配置模型时直接判对方获胜且不调用模型', async () => {
