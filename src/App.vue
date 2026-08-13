@@ -343,7 +343,7 @@ function exitReplay() {
 
 <template>
   <div class="page">
-    <h1>五子棋 · AI 对战</h1>
+    <h1>五子棋 · AI 对弈</h1>
 
     <div class="panel">
       <label>
@@ -429,6 +429,7 @@ function exitReplay() {
       <button class="restore-close" @click="gameNotice = null">知道了</button>
     </div>
 
+    <div class="game-area">
     <GameBoard
       :board="replayView !== null ? replayView.board : state.board"
       :board-size="state.boardSize"
@@ -439,7 +440,10 @@ function exitReplay() {
       @play="onHumanPlay"
     />
 
-    <MoveLog :moves="state.moves" :failures="state.aiFailures" :active-seq="replaySeq" @select="onSelectMove" />
+    <aside class="move-log-panel">
+      <MoveLog :moves="state.moves" :failures="state.aiFailures" :active-seq="replaySeq" @select="onSelectMove" />
+    </aside>
+    </div>
 
     <StartScreen
       :open="showStart"

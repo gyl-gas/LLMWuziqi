@@ -179,7 +179,7 @@ function appendCorrection(messages: ChatMessage[], result: { message: string; ra
   }
   next.push({
     role: 'user',
-    content: `你上一步返回的落子不合法：${result.message}。请重新输出一个符合要求的 JSON 落子，只输出 JSON。`,
+    content: `你上次返回的落子不合法：${result.message}。重新输出一个符合要求的 JSON 落子，只输出 JSON。`,
   })
   return next
 }
