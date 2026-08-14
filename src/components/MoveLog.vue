@@ -132,13 +132,14 @@ function toggleFailure(failure: AiFailureEntry) {
 
 <style scoped>
 .move-log {
-  max-width: 720px;
-  margin: 20px auto 0;
   text-align: left;
   border: 1px solid #d8c3a0;
   border-radius: 10px;
   background: #fffaf0;
   padding: 14px 18px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .move-log h2 {
@@ -169,7 +170,8 @@ function toggleFailure(failure: AiFailureEntry) {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 320px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 

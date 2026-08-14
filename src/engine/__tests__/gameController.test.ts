@@ -430,6 +430,63 @@ describe('useGameController / 暂停与继续', () => {
     onHumanPlay(7, 7)
     expect(state.moveCount).toBe(1)
   })
+  it('人机对战暂停后可代替 AI 落子，继续后恢复 AI 自动落子', async () => {
+    mockFetch('{"color":2,"x":8,"y":9}')
+    config.game.mode = 'human-ai'
+    config.game.humanColor = 1
+    newGame(15)
+    expect(phase.value).toBe('humanTurn')
+    pauseGame()
+    expect(phase.value).toBe('paused')
+    onHumanPlay(7, 7)
+    expect(state.moveCount).toBe(1)
+    expect(state.currentPlayer).toBe(WHITE)
+    onHumanPlay(7, 8)
+    expect(state.moveCount).toBe(2)
+    expect(state.currentPlayer).toBe(BLACK)
+    resumeGame()
+    expect(phase.value).toBe('humanTurn')
+    onHumanPlay(8, 8)
+    await vi.waitFor(() => expect(state.moveCount).toBe(4))
+    expect(state.moves[3].source).toBe('ai')
+  })
+
+  it('暂停时替 AI 落子后，在途 AI 请求不再落子', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(deferredMove('{"color":2,"x":7,"y":8}', 150)))
+    config.game.mode = 'human-ai'
+    config.game.humanColor = 1
+    newGame(15)
+    onHumanPlay(7, 7)
+    await vi.waitFor(() => expect(phase.value).toBe('aiThinking'))
+    pauseGame()
+    onHumanPlay(7, 8)
+    expect(state.moveCount).toBe(2)
+    expect(state.currentPlayer).toBe(BLACK)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(state.moveCount).toBe(2)
+    expect(state.currentPlayer).toBe(BLACK)
+    resumeGame()
+    expect(phase.value).toBe('humanTurn')
+  })
+
+  it('暂停接管后继续，旧 AI 请求不与新一轮请求双重落子', async () => {
+    const fetchMock = vi.fn()
+    fetchMock.mockResolvedValueOnce(deferredMove('{"color":2,"x":7,"y":8}', 150))
+    fetchMock.mockResolvedValueOnce(deferredMove('{"color":2,"x":8,"y":9}', 30))
+    vi.stubGlobal('fetch', fetchMock)
+    config.game.mode = 'human-ai'
+    config.game.humanColor = 1
+    newGame(15)
+    onHumanPlay(7, 7)
+    await vi.waitFor(() => expect(phase.value).toBe('aiThinking'))
+    pauseGame()
+    onHumanPlay(7, 8)
+    resumeGame()
+    expect(phase.value).toBe('humanTurn')
+    onHumanPlay(8, 8)
+    await vi.waitFor(() => expect(state.moveCount).toBe(4))
+    expect(state.moves[3]).toMatchObject({ source: 'ai', x: 8, y: 9 })
+  })
 })
 
 describe('useGameController / 导入导出', () => {

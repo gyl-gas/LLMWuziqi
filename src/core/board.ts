@@ -6,7 +6,7 @@ export const BLACK = 1 as Stone
 export const WHITE = 2 as Stone
 
 /** 支持的棋盘尺寸 */
-export const SUPPORTED_SIZES = [7, 9, 11, 13, 15] as const
+export const SUPPORTED_SIZES = [7, 9, 11, 13, 15, 17, 19] as const
 export type BoardSize = (typeof SUPPORTED_SIZES)[number]
 
 /** 连成几子获胜 */

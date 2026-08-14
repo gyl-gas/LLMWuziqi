@@ -10,10 +10,36 @@ body {
 }
 
 .page {
-  max-width: 960px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 24px 16px 60px;
   text-align: center;
+}
+
+.game-area {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.move-log-panel {
+  width: 540px;
+  flex-shrink: 0;
+  height: 650px;
+}
+
+@media (max-width: 1100px) {
+  .game-area {
+    flex-direction: column;
+    align-items: center;
+  }
+  .move-log-panel {
+    width: 100%;
+    max-width: 760px;
+    max-height: 360px;
+  }
 }
 
 h1 {

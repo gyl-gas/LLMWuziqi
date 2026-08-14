@@ -53,56 +53,9 @@ export interface AppConfig {
 
 const STORAGE_KEY = 'gomoku.config'
 
-/** 从本地 .env.local 读取的默认 apiKey（demo 便捷注入） */
-const defaultApiKey = (import.meta.env.VITE_DEEPSEEK_API_KEY as string | undefined) ?? ''
-/** 分享用固定预设：打包发布给朋友时，可在说明弹窗中一键配置 */
-export interface SharedPreset {
-  id: string
-  name: string
-  baseUrl: string
-  apiKey: string
-  models: string[]
-}
-
-export const SHARED_PRESET: SharedPreset = {
-  id: 'deepseek-shared',
-  name: 'DeepSeek（分享）',
-  // 生产环境直连 DeepSeek（已支持浏览器 CORS）；本地开发也可直连
-  baseUrl: 'https://api.deepseek.com',
-  apiKey: defaultApiKey,
-  models: ['deepseek-v4-flash'],
-}
-
-/** 一键应用分享预设：写入/更新 provider 并选中对应模型 */
-export function applySharedPreset(): void {
-  const existing = config.providers.find((p) => p.id === SHARED_PRESET.id)
-  if (existing !== undefined) {
-    existing.name = SHARED_PRESET.name
-    existing.baseUrl = SHARED_PRESET.baseUrl
-    existing.apiKey = SHARED_PRESET.apiKey
-    existing.models = [...SHARED_PRESET.models]
-    existing.enabled = true
-  } else {
-    config.providers.unshift({ ...SHARED_PRESET, enabled: true })
-  }
-  config.active = { providerId: SHARED_PRESET.id, model: SHARED_PRESET.models[0] }
-  config.game.aiBlack = { providerId: SHARED_PRESET.id, model: SHARED_PRESET.models[0] }
-  config.game.aiWhite = { providerId: SHARED_PRESET.id, model: SHARED_PRESET.models[0] }
-}
 function defaults(): AppConfig {
   return {
-    providers: [
-      {
-        id: 'deepseek-default',
-        name: 'DeepSeek',
-        // 生产环境直接连 DeepSeek（已验证支持浏览器 CORS），不依赖本地代理
-        baseUrl: 'https://api.deepseek.com',
-        apiKey: defaultApiKey,
-        models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
-        enabled: true,
-        note: '示例 provider，填入 apiKey 后可用',
-      },
-    ],
+    providers: [],
     active: null,
     game: {
       boardSize: 9,
@@ -167,7 +120,7 @@ function load(): AppConfig {
     }
     const parsed = JSON.parse(raw) as Partial<AppConfig>
     const providers = Array.isArray(parsed.providers)
-      ? parsed.providers.map((p) => ({ ...p, apiKey: p.apiKey || defaultApiKey }))
+      ? parsed.providers
       : base.providers
     const cfg: AppConfig = {
       ...base,

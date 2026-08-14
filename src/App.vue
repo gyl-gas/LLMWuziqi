@@ -44,6 +44,12 @@ const resumeData = ref<ExportedGame | null>(null)
 
 const isPaused = computed(() => phase.value === 'paused')
 
+/** 暂停/继续按钮文案：人机对战轮到 AI 时暂停即接管 */
+const pauseLabel = computed(() => {
+  if (phase.value === 'paused') return '继续对局'
+  if (config.game.mode === 'human-ai' && state.currentPlayer !== config.game.humanColor) return '暂停 AI'
+  return '暂停对局'
+})
 /** 首次进入页面时默认展示说明弹窗；无暂存对局时展示开始界面 */
 onMounted(() => {
   if (!restored.value) showStart.value = true
@@ -238,7 +244,12 @@ const statusText = computed(() => {
     return `${side} 思考中… ${aiElapsed.value.toFixed(1)}s`
   }
   if (phase.value === 'aiRetry') return 'AI 出错了'
-  if (phase.value === 'paused') return '已暂停'
+  if (phase.value === 'paused') {
+    if (config.game.mode === 'human-ai' && state.currentPlayer !== config.game.humanColor) {
+      return '已暂停 · 可点击棋盘代替 AI 落子'
+    }
+    return '已暂停'
+  }
   if (config.game.mode === 'ai-ai') return state.currentPlayer === BLACK ? '轮到黑方 AI' : '轮到白方 AI'
   return state.currentPlayer === BLACK ? '轮到黑棋' : '轮到白棋'
 })
@@ -255,6 +266,7 @@ const statusClass = computed(() => {
 const boardDisabled = computed(() => {
   if (replaySeq.value !== null) return true
   if (config.game.mode === 'ai-ai') return true
+  if (config.game.mode === 'human-ai' && phase.value === 'paused') return false
   return phase.value !== 'humanTurn'
 })
 
@@ -352,14 +364,10 @@ function exitReplay() {
           <option v-for="s in SUPPORTED_SIZES" :key="s" :value="s">{{ s }} × {{ s }}</option>
         </select>
       </label>
-      <label v-if="config.game.mode === 'human-ai'" class="check">
-        <input v-model="config.game.autoRequestAi" type="checkbox" />
-        请求 AI
-      </label>
       <button class="primary" @click="openStartScreen">开始新对局</button>
       <button :disabled="state.winner !== null || state.isDraw" @click="openMatchSettings">对局设置</button>
       <button :disabled="state.winner !== null || state.isDraw" @click="onTogglePause">
-        {{ isPaused ? '继续对局' : '暂停对局' }}
+        {{ pauseLabel }}
       </button>
       <button @click="onExport">导出对局</button>
       <button @click="fileInput?.click()">导入对局</button>

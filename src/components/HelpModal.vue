@@ -1,27 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { applySharedPreset, SHARED_PRESET, useConfig } from '../store/config'
-
 defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
-const { config } = useConfig()
-const applied = ref(false)
-
-const isActive = computed(
-  () =>
-    config.active !== null &&
-    config.active.providerId === SHARED_PRESET.id &&
-    config.active.model === SHARED_PRESET.models[0],
-)
-
-function apply() {
-  applySharedPreset()
-  applied.value = true
-}
-
 function close() {
-  applied.value = false
   emit('close')
 }
 </script>
@@ -36,20 +17,6 @@ function close() {
         </div>
 
         <div class="help-body">
-          <section class="preset">
-            <h3>快速开始（DeepSeek 预置配置）</h3>
-            <p class="hint">已内置 baseUrl、API Key 与模型，点击下方按钮一键配置：</p>
-            <div class="kv">
-              <div><span class="k">Base URL</span><code>{{ SHARED_PRESET.baseUrl }}</code></div>
-              <div><span class="k">模型</span><code>{{ SHARED_PRESET.models[0] }}</code></div>
-              <div><span class="k">API Key</span><code class="key">{{ SHARED_PRESET.apiKey }}</code></div>
-            </div>
-            <button class="apply-btn" :disabled="applied && isActive" @click="apply">
-              {{ applied && isActive ? '✓ 已应用' : '一键配置模型' }}
-            </button>
-            <p v-if="applied && isActive" class="applied-hint">已应用，可在顶部「模型」下拉框中看到该模型。</p>
-          </section>
-
           <section>
             <h3>小贴士</h3>
             <ul>
@@ -130,76 +97,6 @@ function close() {
   margin: 0 0 8px;
   font-size: 15px;
   color: #4a2f14;
-}
-
-.hint {
-  font-size: 12px;
-  color: #8a7357;
-  margin: 0 0 10px;
-}
-
-.kv {
-  background: #f5edda;
-  border: 1px solid #e2d3b8;
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.kv > div {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-}
-
-.kv .k {
-  flex: 0 0 68px;
-  color: #7a5a2e;
-  font-weight: 600;
-}
-
-.kv code {
-  background: #fff;
-  border: 1px solid #e0d0ae;
-  border-radius: 5px;
-  padding: 3px 8px;
-  font-family: Consolas, monospace;
-  font-size: 12px;
-  word-break: break-all;
-  color: #4a3a22;
-}
-
-.kv code.key {
-  color: #7a4a1d;
-}
-
-.apply-btn {
-  background: #2e7d32;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 18px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.apply-btn:hover {
-  background: #256b29;
-}
-
-.apply-btn:disabled {
-  background: #9ccc9f;
-  cursor: default;
-}
-
-.applied-hint {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: #2e7d32;
 }
 
 .help-body ul {

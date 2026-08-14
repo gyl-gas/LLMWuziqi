@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { useGame } from '../store/game'
 import { useConfig } from '../store/config'
 import type { ProviderConfig, ThinkingLevel } from '../store/config'
@@ -48,6 +48,8 @@ let aiTimerOwner = 0
 let lastContext: AiContext | null = null
 /** 对局代次：新开/恢复对局时递增，用于丢弃过期 AI 回合的异步结果 */
 let gameVersion = 0
+/** AI 回合序号：新 AI 请求启动时递增，用于丢弃过期的在途请求 */
+let aiRound = 0
 
 /** 启动思考计时，返回本次计时器归属号；AI 对弈后一手会开启新计时器 */
 function startAiTimer(): number {
@@ -249,7 +251,9 @@ function afterMove() {
   phase.value = 'humanTurn'
 }
 
-async function attemptLoop(target: AiTarget, messages: ChatMessage[], startAttempt: number, autoRetries: number, version: number) {
+async function attemptLoop(target: AiTarget, messages: ChatMessage[], startAttempt: number, autoRetries: number, version: number, round: number) {
+  // 发起请求时的落子方：回合被玩家接管后，过期的 AI 结果不得再落子
+  const moveColor = state.currentPlayer
   let msgs = messages
   let attempt = startAttempt
   let failCount = 0
@@ -260,8 +264,13 @@ async function attemptLoop(target: AiTarget, messages: ChatMessage[], startAttem
     if (state.winner !== null || state.isDraw) return
     // 暂停：不再发起下一次落子；在途请求的结果在下方统一处理
     if (paused.value) return
+    // 回合已过期（新 AI 请求已启动）或落子方已变化（玩家已接管）：丢弃
+    if (round !== aiRound) return
+    if (state.currentPlayer !== moveColor) return
     const result = await attemptOnce(target, msgs)
     if (version !== gameVersion) return // 对局已重置，丢弃本次 AI 回合结果
+    if (round !== aiRound) return
+    if (state.currentPlayer !== moveColor) return
     if (result.status !== 'ok') recordFailedAttempt(result, target)
     if (paused.value) {
       // 暂停发生在请求在途期间：合法落子放行最后一手，失败则直接停止（不重试、不判负）
@@ -294,7 +303,6 @@ async function attemptLoop(target: AiTarget, messages: ChatMessage[], startAttem
     attempt += 1
   }
 }
-
 /** 触发 AI 落子（初始/自动请求/双 AI 共用入口） */
 async function runAiTurn() {
   if (state.winner !== null || state.isDraw) return
@@ -311,10 +319,11 @@ async function runAiTurn() {
   }
   phase.value = 'aiThinking'
   aiError.value = null
+  const round = ++aiRound
   const owner = startAiTimer()
   const version = gameVersion
   try {
-    await attemptLoop(target, buildInitialMessages(), 1, config.ai.maxAutoRetries, version)
+    await attemptLoop(target, buildInitialMessages(), 1, config.ai.maxAutoRetries, version, round)
   } finally {
     stopAiTimer(owner)
   }
@@ -325,8 +334,9 @@ function retryAi() {
   if (phase.value !== 'aiRetry' || lastContext === null) return
   const ctx = lastContext
   phase.value = 'aiThinking'
+  const round = ++aiRound
   const owner = startAiTimer()
-  void attemptLoop(ctx.target, ctx.messages, ctx.attempt + 1, 0, gameVersion).finally(() => stopAiTimer(owner))
+  void attemptLoop(ctx.target, ctx.messages, ctx.attempt + 1, 0, gameVersion, round).finally(() => stopAiTimer(owner))
 }
 
 /** 暂停对局：放行在途 AI 请求（最后一手仍会落子），但不再发起下一次落子 */
@@ -347,7 +357,7 @@ function resumeGame() {
   }
   const needsAi =
     config.game.mode === 'ai-ai' ||
-    (config.game.mode === 'human-ai' && config.game.autoRequestAi && state.currentPlayer !== config.game.humanColor)
+    (config.game.mode === 'human-ai' && state.currentPlayer !== config.game.humanColor)
   if (needsAi && targetForCurrentPlayer() === null) {
     aiError.value = {
       kind: 'no-model',
@@ -417,11 +427,7 @@ function newGame(size?: number) {
   paused.value = false
   if (config.game.mode === 'ai-ai') {
     void runAiTurn()
-  } else if (
-    config.game.mode === 'human-ai' &&
-    config.game.autoRequestAi &&
-    state.currentPlayer !== config.game.humanColor
-  ) {
+  } else if (config.game.mode === 'human-ai' && state.currentPlayer !== config.game.humanColor) {
     void runAiTurn()
   } else {
     phase.value = 'humanTurn'
@@ -430,33 +436,28 @@ function newGame(size?: number) {
 
 /** 人类落子：成功且未结束时按配置决定是否自动请求 AI */
 function onHumanPlay(x: number, y: number) {
-  if (phase.value !== 'humanTurn') return
-  if (paused.value) return
   if (config.game.mode === 'ai-ai') return
+  if (paused.value) {
+    // 暂停接管：仅人机对战中允许玩家代替 AI 落子
+    if (config.game.mode !== 'human-ai') return
+  } else if (phase.value !== 'humanTurn') {
+    return
+  }
   if (!play(x, y, { source: 'human' })) return
   if (state.winner !== null || state.isDraw) {
+    paused.value = false
     phase.value = 'over'
     return
   }
-  if (config.game.mode === 'human-ai' && config.game.autoRequestAi) {
+  if (paused.value) {
+    // 暂停接管中：继续手动落子，不触发 AI
+    phase.value = 'paused'
+    return
+  }
+  if (config.game.mode === 'human-ai') {
     void runAiTurn()
   }
 }
-
-// 打开「请求 AI」开关时：仅当轮到 AI 才立即接管；轮到玩家则等待其落子后再由 onHumanPlay 触发，
-// 避免 AI 去操作玩家的棋子（例如关闭开关时玩家曾代替 AI 落子）
-watch(
-  () => config.game.autoRequestAi,
-  (enabled) => {
-    if (!enabled) return
-    if (state.winner !== null || state.isDraw) return
-    if (paused.value) return
-    if (phase.value === 'aiThinking' || phase.value === 'aiRetry') return
-    if (config.game.mode === 'human-ai' && state.currentPlayer !== config.game.humanColor) {
-      void runAiTurn()
-    }
-  },
-)
 
 export function useGameController() {
   return {

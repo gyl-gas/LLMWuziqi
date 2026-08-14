@@ -16,8 +16,8 @@ const props = defineProps<{
 const emit = defineEmits<{ play: [x: number, y: number] }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const CELL = 40
-const MARGIN = 38
+const BOARD_SIZE_PX = 650
+const MARGIN = 42
 const hover = ref<{ x: number; y: number } | null>(null)
 let rafId = 0
 
@@ -29,9 +29,10 @@ function renderStone(
   last = false,
   alpha = 1,
 ) {
-  const cx = MARGIN + y * CELL
-  const cy = MARGIN + x * CELL
-  const r = CELL * 0.42
+  const cell = (BOARD_SIZE_PX - MARGIN * 2) / (props.boardSize - 1)
+  const cx = MARGIN + y * cell
+  const cy = MARGIN + x * cell
+  const r = cell * 0.42
   ctx.globalAlpha = alpha
   ctx.beginPath()
   ctx.arc(cx, cy, r, 0, Math.PI * 2)
@@ -57,7 +58,8 @@ function draw() {
 
   const dpr = window.devicePixelRatio || 1
   const n = props.boardSize
-  const cssSize = CELL * (n - 1) + MARGIN * 2
+  const cell = (BOARD_SIZE_PX - MARGIN * 2) / (n - 1)
+  const cssSize = BOARD_SIZE_PX
 
   canvas.style.width = `${cssSize}px`
   canvas.style.height = `${cssSize}px`
@@ -75,14 +77,14 @@ function draw() {
   ctx.strokeStyle = '#6b4423'
   ctx.lineWidth = 1
   for (let i = 0; i < n; i++) {
-    const p = MARGIN + i * CELL
+    const p = MARGIN + i * cell
     ctx.beginPath()
     ctx.moveTo(MARGIN, p)
-    ctx.lineTo(MARGIN + (n - 1) * CELL, p)
+    ctx.lineTo(MARGIN + (n - 1) * cell, p)
     ctx.stroke()
     ctx.beginPath()
     ctx.moveTo(p, MARGIN)
-    ctx.lineTo(p, MARGIN + (n - 1) * CELL)
+    ctx.lineTo(p, MARGIN + (n - 1) * cell)
     ctx.stroke()
   }
 
@@ -99,7 +101,7 @@ function draw() {
   ctx.fillStyle = '#6b4423'
   for (const [sx, sy] of starPoints) {
     ctx.beginPath()
-    ctx.arc(MARGIN + sx * CELL, MARGIN + sy * CELL, 4, 0, Math.PI * 2)
+    ctx.arc(MARGIN + sx * cell, MARGIN + sy * cell, 4, 0, Math.PI * 2)
     ctx.fill()
   }
 
@@ -109,8 +111,8 @@ function draw() {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   for (let i = 0; i < n; i++) {
-    ctx.fillText(String(i), MARGIN - 15, MARGIN + i * CELL)
-    ctx.fillText(String(i), MARGIN + i * CELL, MARGIN - 15)
+    ctx.fillText(String(i), MARGIN - 15, MARGIN + i * cell)
+    ctx.fillText(String(i), MARGIN + i * cell, MARGIN - 15)
   }
 
   // 棋子 + 最后一手标记
@@ -131,8 +133,8 @@ function draw() {
     ctx.strokeStyle = '#e53935'
     ctx.lineWidth = 3
     ctx.beginPath()
-    ctx.moveTo(MARGIN + y1 * CELL, MARGIN + x1 * CELL)
-    ctx.lineTo(MARGIN + y2 * CELL, MARGIN + x2 * CELL)
+    ctx.moveTo(MARGIN + y1 * cell, MARGIN + x1 * cell)
+    ctx.lineTo(MARGIN + y2 * cell, MARGIN + x2 * cell)
     ctx.stroke()
   }
 
@@ -149,8 +151,9 @@ function toGrid(e: MouseEvent): { x: number; y: number } | null {
   const canvas = canvasRef.value
   if (!canvas) return null
   const rect = canvas.getBoundingClientRect()
-  const col = Math.round((e.clientX - rect.left - MARGIN) / CELL)
-  const row = Math.round((e.clientY - rect.top - MARGIN) / CELL)
+  const cell = (BOARD_SIZE_PX - MARGIN * 2) / (props.boardSize - 1)
+  const col = Math.round((e.clientX - rect.left - MARGIN) / cell)
+  const row = Math.round((e.clientY - rect.top - MARGIN) / cell)
   if (row < 0 || col < 0 || row >= props.boardSize || col >= props.boardSize) return null
   return { x: row, y: col }
 }
