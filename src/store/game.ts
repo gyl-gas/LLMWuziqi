@@ -194,5 +194,29 @@ export function useGame() {
     saveSnapshot()
   }
 
-  return { state, start, play, recordAiFailure, forfeit, restoreSnapshot, importSnapshot, clearSnapshot }
+  /** 悔棋：撤销最后一手并清除终局状态（终局后也可悔棋），成功返回 true */
+  function undo(): boolean {
+    if (state.moves.length === 0 && state.winner === null && !state.isDraw) return false
+
+    state.moves.pop()
+
+    // 以剩余棋谱为事实源重建棋盘
+    const board = createBoard(state.boardSize)
+    for (const m of state.moves) {
+      placeStone(board, m.x, m.y, m.color)
+    }
+    state.board = board
+    state.moveCount = state.moves.length
+    state.lastMove = state.moveCount > 0 ? { ...state.moves[state.moveCount - 1] } : null
+    state.currentPlayer = state.moveCount % 2 === 0 ? BLACK : WHITE
+    state.winner = null
+    state.isDraw = false
+    state.winLine = null
+    // 清理与被撤销手相关的 AI 失败记录（其 moveCount 不小于当前手数）
+    state.aiFailures = state.aiFailures.filter((f) => f.moveCount < state.moveCount)
+    saveSnapshot()
+    return true
+  }
+
+  return { state, start, play, recordAiFailure, forfeit, undo, restoreSnapshot, importSnapshot, clearSnapshot }
 }

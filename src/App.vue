@@ -26,6 +26,7 @@ const {
   importGame,
   pauseGame,
   resumeGame,
+  undoMove,
 } = useGameController()
 const { config } = useConfig()
 
@@ -43,6 +44,9 @@ const importNotice = ref('')
 const resumeData = ref<ExportedGame | null>(null)
 
 const isPaused = computed(() => phase.value === 'paused')
+
+/** 是否有可撤销的手（终局后仍可悔棋） */
+const canUndo = computed(() => state.moveCount > 0 || state.winner !== null || state.isDraw)
 
 /** 暂停/继续按钮文案：人机对战轮到 AI 时暂停即接管 */
 const pauseLabel = computed(() => {
@@ -110,6 +114,12 @@ function onStartFromScreen() {
   resumeData.value = null
   restored.value = false
   newGame(config.game.boardSize)
+}
+
+/** 悔棋：退出复盘后撤销最后一手（终局后也可悔棋） */
+function onUndo() {
+  exitReplay()
+  undoMove()
 }
 
 /** 暂停/继续切换 */
@@ -369,6 +379,7 @@ function exitReplay() {
       <button :disabled="state.winner !== null || state.isDraw" @click="onTogglePause">
         {{ pauseLabel }}
       </button>
+      <button :disabled="!canUndo" @click="onUndo">悔棋</button>
       <button @click="onExport">导出对局</button>
       <button @click="fileInput?.click()">导入对局</button>
       <input ref="fileInput" type="file" accept="application/json,.json" class="hidden-file" @change="onImportFile" />

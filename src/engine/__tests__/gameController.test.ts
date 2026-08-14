@@ -489,6 +489,99 @@ describe('useGameController / 暂停与继续', () => {
   })
 })
 
+describe('useGameController / 悔棋', () => {
+  const { undoMove, resumeGame } = useGameController()
+
+  afterEach(() => {
+    config.game.mode = 'human-ai'
+  })
+
+  it('双人对战悔棋后回到人类回合', () => {
+    config.game.mode = 'pvp'
+    newGame(15)
+    onHumanPlay(7, 7)
+    onHumanPlay(8, 8)
+    expect(state.moveCount).toBe(2)
+    expect(state.currentPlayer).toBe(BLACK)
+
+    expect(undoMove()).toBe(true)
+    expect(state.moveCount).toBe(1)
+    expect(state.board[8][8]).toBe(0)
+    expect(state.currentPlayer).toBe(WHITE)
+    expect(phase.value).toBe('humanTurn')
+  })
+
+  it('人机对战撤销 AI 最后一手后暂停，继续后 AI 重新落子', async () => {
+    mockFetch('{"color":2,"x":7,"y":8}')
+    newGame(15)
+    onHumanPlay(7, 7)
+    await vi.waitFor(() => expect(state.moveCount).toBe(2))
+    expect(state.board[7][8]).toBe(WHITE)
+    expect(state.currentPlayer).toBe(BLACK)
+
+    expect(undoMove()).toBe(true)
+    expect(state.moveCount).toBe(1)
+    expect(state.board[7][8]).toBe(0)
+    expect(state.currentPlayer).toBe(WHITE)
+    expect(phase.value).toBe('paused')
+
+    resumeGame()
+    await vi.waitFor(() => expect(state.moveCount).toBe(2))
+    expect(state.board[7][8]).toBe(WHITE)
+    expect(phase.value).toBe('humanTurn')
+  })
+
+  it('终局后可悔棋：撤销制胜一手并继续对局', () => {
+    config.game.mode = 'pvp'
+    newGame(15)
+    const sequence: Array<[number, number]> = [
+      [0, 0], [1, 0],
+      [0, 1], [1, 1],
+      [0, 2], [1, 2],
+      [0, 3], [1, 3],
+      [0, 4],
+    ]
+    for (const [x, y] of sequence) {
+      onHumanPlay(x, y)
+    }
+    expect(state.winner).toBe(BLACK)
+    expect(phase.value).toBe('over')
+
+    expect(undoMove()).toBe(true)
+    expect(state.winner).toBeNull()
+    expect(state.winLine).toBeNull()
+    expect(state.moveCount).toBe(8)
+    expect(phase.value).toBe('humanTurn')
+    onHumanPlay(1, 4)
+    expect(state.moveCount).toBe(9)
+  })
+
+  it('AI 对弈中悔棋后暂停，继续后由当前方重新落子', async () => {
+    const fetchMock = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: '{"color":1,"x":7,"y":7}' } }] }) })
+      .mockResolvedValueOnce(deferredMove('{"color":2,"x":7,"y":8}', 200))
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: '{"color":1,"x":3,"y":3}' } }] }) })
+    vi.stubGlobal('fetch', fetchMock)
+    config.game.mode = 'ai-ai'
+    config.game.aiBlack = { providerId: 'mock', model: 'm' }
+    config.game.aiWhite = { providerId: 'mock', model: 'm' }
+    newGame(15)
+    await vi.waitFor(() => expect(state.moveCount).toBe(1))
+    expect(state.board[7][7]).toBe(BLACK)
+
+    expect(undoMove()).toBe(true)
+    expect(state.moveCount).toBe(0)
+    expect(state.currentPlayer).toBe(BLACK)
+    expect(phase.value).toBe('paused')
+
+    resumeGame()
+    await vi.waitFor(() => expect(state.moveCount).toBe(1))
+    expect(state.board[3][3]).toBe(BLACK)
+    expect(state.currentPlayer).toBe(WHITE)
+  })
+})
+
 describe('useGameController / 导入导出', () => {
   const { importGame, resumeGame } = useGameController()
 

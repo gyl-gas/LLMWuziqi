@@ -33,7 +33,7 @@ interface AiContext {
   attempt: number
 }
 
-const { state, start, play, recordAiFailure, forfeit, restoreSnapshot, importSnapshot } = useGame()
+const { state, start, play, recordAiFailure, forfeit, undo, restoreSnapshot, importSnapshot } = useGame()
 const { config } = useConfig()
 
 const phase = ref<GamePhase>('humanTurn')
@@ -459,6 +459,29 @@ function onHumanPlay(x: number, y: number) {
   }
 }
 
+/** 悔棋：撤销最后一手（终局后也可用）；轮到 AI 时进入暂停，避免 AI 立即重复落子 */
+function undoMove(): boolean {
+  if (state.moveCount === 0 && state.winner === null && !state.isDraw) return false
+  // 丢弃在途 AI 请求与重试上下文，防止撤销后旧结果落子
+  aiRound += 1
+  stopAiTimer()
+  lastContext = null
+  aiError.value = null
+  gameNotice.value = null
+  if (!undo()) return false
+  const nextNeedsAi =
+    config.game.mode === 'ai-ai' ||
+    (config.game.mode === 'human-ai' && state.currentPlayer !== config.game.humanColor)
+  if (nextNeedsAi) {
+    paused.value = true
+    phase.value = 'paused'
+  } else {
+    paused.value = false
+    phase.value = 'humanTurn'
+  }
+  return true
+}
+
 export function useGameController() {
   return {
     state,
@@ -470,6 +493,7 @@ export function useGameController() {
     newGame,
     onHumanPlay,
     retryAi,
+    undoMove,
     restoreGame,
     importGame,
     pauseGame,
